@@ -95,7 +95,7 @@ def _try_load_model() -> bool:
 
 
 @app.on_event("startup")
-def _on_start() -> None:
+async def _on_start() -> None:
     _try_load_model()
     # Also start a tiny Wyoming-protocol server in the background so
     # HA can auto-discover this add-on as a wake-word service.
@@ -129,18 +129,21 @@ def _on_start() -> None:
         ],
     )
 
-    async def _run_wyoming() -> None:
-        server = AsyncServer.from_uri("tcp://0.0.0.0:10400")
-        log.info("Wyoming server listening on tcp://0.0.0.0:10400")
-        # Minimal loop: accept client, then on audio chunks run KWS.
-        await server.run(_wyoming_handler)
+    _initialised_clients: set = set()
 
-    async def _wyoming_handler(reader, writer):
+    async def _wyoming_handler(reader, writer) -> None:
+        client_id = id(writer)
         try:
             while True:
                 msg = await reader.read()
                 if msg is None:
                     return
+                # Always reply to first message with our Info event
+                if client_id not in _initialised_clients:
+                    _initialised_clients.add(client_id)
+                    await writer.write(info.event())
+                    log.info("Wyoming client connected, sent Info (wake=сычик)")
+                    continue
                 if isinstance(msg, AudioChunk):
                     samples = np.frombuffer(msg.audio, dtype=np.int16).astype(np.float32) / 32768.0
                     if _kws is None:
@@ -149,24 +152,25 @@ def _on_start() -> None:
                     stream.accept_waveform(sample_rate=msg.rate, waveform=samples)
                     keyword = _kws.get_result(stream).keyword
                     _kws.reset(stream)
-                    if keyword == KEYWORD:
-                        log.info("Wake word «%s» detected (Wyoming)", KEYWORD)
-                        await writer.write(Detection(name=KEYWORD).event())
-                else:
-                    # Echo info on first connect.
-                    if isinstance(msg, AudioStart) or msg is not None and not getattr(msg, "_sychik_inited", False):
-                        await writer.write(info.event())
+                    if keyword:
+                        log.info("Wake word «%s» detected (Wyoming)", keyword)
+                        await writer.write(Detection(name=keyword).event())
         except Exception as e:
             log.warning("Wyoming client disconnected: %s", e)
         finally:
+            _initialised_clients.discard(client_id)
             try:
                 await writer.drain()
             except Exception:
                 pass
 
-    @app.on_event("startup")
-    def _start_wyoming() -> None:
-        asyncio.get_event_loop().create_task(_run_wyoming())
+    async def _run_wyoming() -> None:
+        server = AsyncServer.from_uri("tcp://0.0.0.0:10400")
+        log.info("Wyoming server listening on tcp://0.0.0.0:10400")
+        await server.run(_wyoming_handler)
+
+    # Launch Wyoming server as a background task within the running event loop
+    asyncio.create_task(_run_wyoming())
 
 
 # --------------------------------------------------------------------
