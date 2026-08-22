@@ -1,0 +1,38 @@
+name: "SychiK KWS"
+version: "1.1.0"
+slug: "sychik_kws"
+description: "Wake-word detector for the Russian phrase «Сычик» using sherpa-onnx"
+url: "https://github.com/monkeleventh/sychik-addons"
+image: "ghcr.io/monkeleventh/sychik_kws"
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: services
+boot: auto
+hassio_api: true
+hassio_role: default
+homeassistant_api: false
+auth_api: false
+host_network: false
+ports:
+  10400/tcp: 10400
+  10401/tcp: null
+ports_description:
+  10400/tcp: "Wyoming protocol (for Home Assistant)"
+  10401/tcp: "REST API (LAN only)"
+map:
+  - share/sychik_kws:rw
+environment:
+  KWS_MODEL_DIR: "/data/models"
+  KWS_THRESHOLD: "0.65"
+  LOG_LEVEL: "INFO"
+discovery:
+  - wyoming
+options:
+  threshold: 0.65
+  log_level: "INFO"
+schema:
+  threshold: "float(0.0,1.0)"
+  log_level: "list(DEBUG|INFO|WARNING|ERROR)?"
+watchdog: "http://[HOST]:[PORT:10401]/health"

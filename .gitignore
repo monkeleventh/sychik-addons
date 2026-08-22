@@ -1,0 +1,19 @@
+# Build artifacts
+build/
+.cache/
+*.pyc
+__pycache__/
+
+# Local dev
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local recordings / models (don't commit these)
+*/models/enroll/
+*/models/*.npy
+*/models/*.onnx
+*/models/tokens.txt
+*/data/profiles.json
+*/data/embeddings/

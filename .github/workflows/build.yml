@@ -1,0 +1,47 @@
+name: Build and publish SychiK add-ons
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.addon }} (multi-arch)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        addon: [sychik_kws, sychik_speaker_id]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Read version from config.yaml
+        id: ver
+        run: echo "version=$(grep '^version:' ./${{ matrix.addon }}/config.yaml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> $GITHUB_OUTPUT
+
+      - name: Login to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.addon }}
+          platforms: linux/amd64  # только amd64 (Proxmox VM), быстрее в ~5x
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.addon }}:${{ steps.ver.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.addon }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          no-cache: true  # force fresh build (bust stale cache)

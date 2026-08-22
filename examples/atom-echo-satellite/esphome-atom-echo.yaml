@@ -1,0 +1,244 @@
+# ESPHome firmware for M5Stack Atom Echo
+# - Voice satellite for Home Assistant (Assist pipeline / Wyoming protocol)
+# - Wake word is handled by HA pipeline; device streams raw 16 kHz audio.
+# - Hardware: ESP32-PICO-D4, PDM MEMS mic, NS4168 I2S amp + mini speaker,
+#   SK6812 RGB LED, tactile button.
+
+substitutions:
+  # ⚠️ ВАЖНО для multi-room: дай каждому satellite уникальное имя.
+  # Это имя станет entity_id в HA (например voice_assistant.atom_echo_kitchen).
+  # Все satellites используют один общий HA pipeline «Сычик», но должны
+  # различаться в Lovelace, автоматизациях и для отслеживания кто где.
+  device_name: atom-echo-kitchen    # ← поменяй для каждой комнаты
+  friendly_name: Сычик Кухня         # ← отображаемое имя в HA
+
+  # --- Pin map (verified against M5Stack Atom Echo v1.x schematic) ---
+  mic_clk_pin: GPIO0      # PDM mic clock
+  mic_data_pin: GPIO34    # PDM mic data
+  spk_bck_pin: GPIO19     # I2S BCLK -> NS4168
+  spk_ws_pin: GPIO33      # I2S LRCK/WS -> NS4168
+  spk_data_pin: GPIO22    # I2S DATA -> NS4168
+  led_pin: GPIO27         # SK6812 / WS2812 data
+  btn_pin: GPIO39         # Tactile button (active LOW, internal pullup)
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "M5Stack Atom Echo — HA voice satellite (Wyoming/Assist pipeline)"
+  min_version: 2025.5.0
+  project:
+    name: esphome.m5stack-atom-echo
+    version: "1.0"
+  on_boot:
+    priority: 600
+    then:
+      - light.turn_on:
+          id: led_status
+          brightness: 50%
+          red: 0
+          green: 0
+          blue: 0.2
+      - delay: 2s
+      - if:
+          condition:
+            not:
+              - api.connected:
+          then:
+            - light.turn_on:
+                id: led_status
+                brightness: 80%
+                red: 0.8
+                green: 0
+                blue: 0
+                flash_length: 500ms
+
+esp32:
+  # In modern ESPHome (2024.6+) prefer the named board. If your install
+  # does not recognise it, fall back to `board: esp32dev` — same chip family.
+  board: m5stack-atom-echo
+  framework:
+    type: arduino
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+  reboot_timeout: 15min
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: light        # lower latency than 'none', still reasonable
+  fast_connect: false
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: !secret ap_fallback_password
+
+captive_portal:
+
+# Use HA's time for log timestamps
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# ============================================================
+#  Button (GPIO39, active-low, internal pull-up, debounced)
+#  - short press: start a voice session
+#  - long press (>= 1s): stop / cancel current session
+# ============================================================
+binary_sensor:
+  - platform: gpio
+    id: atom_button
+    pin:
+      number: ${btn_pin}
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    name: ${friendly_name} Button
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 20ms
+    on_press:
+      - voice_assistant.start:
+    on_multi_click:
+      - timing:
+          - ON for at least 1s
+          - OFF for at least 0.3s
+        then:
+          - voice_assistant.stop:
+
+# ============================================================
+#  Status LED — single SK6812 / WS2812 on GPIO27
+# ============================================================
+light:
+  - platform: neopixelbus
+    id: led_status
+    name: ${friendly_name} LED
+    pin: ${led_pin}
+    chipset: SK6812
+    rgb_order: GRB
+    num_leds: 1
+    method:
+      type: esp32_rmt
+      channel: 0
+    default_transition_length: 100ms
+
+# ============================================================
+#  Voice Assistant
+#  Streams raw PCM (16 kHz mono) to Home Assistant.
+#  Wake word, STT, intent and TTS all live in HA's Assist pipeline.
+#  Set noise_suppression_level 0-3 and auto_gain to taste.
+# ============================================================
+voice_assistant:
+  id: va
+  use_wake_word: false          # wake word lives in HA pipeline
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  volume_multiplier: 1.0
+
+  microphone:
+    pdm_microphone:
+      clk_pin: ${mic_clk_pin}
+      data_pin: ${mic_data_pin}
+      sample_rate: 16000
+
+  speaker:
+    i2s_audio:
+      id: speaker_i2s
+      bck_pin: ${spk_bck_pin}
+      ws_pin: ${spk_ws_pin}
+      data_pin: ${spk_data_pin}
+      sample_rate: 16000
+      bits_per_sample: 16bit
+      channel: mono
+      use_legacy: false          # new I2S driver (default in 2025.5+)
+
+  # ---- State visualisation on the front LED ----------------
+  on_client_connected:
+    - light.turn_on:
+        id: led_status
+        brightness: 50%
+        red: 0
+        green: 0.6
+        blue: 0
+  on_client_disconnected:
+    - light.turn_on:
+        id: led_status
+        brightness: 50%
+        red: 0
+        green: 0
+        blue: 0.2
+  on_listening:                 # wake word detected, mic open
+    - light.turn_on:
+        id: led_status
+        brightness: 80%
+        red: 0
+        green: 0
+        blue: 1.0
+        flash_length: 350ms
+  on_stt_end:                   # speech recognised, waiting for response
+    - light.turn_on:
+        id: led_status
+        brightness: 80%
+        red: 0
+        green: 0.8
+        blue: 0
+  on_tts_start:                 # speaking answer
+    - light.turn_on:
+        id: led_status
+        brightness: 80%
+        red: 1.0
+        green: 0.3
+        blue: 0
+  on_tts_end:
+    - light.turn_on:
+        id: led_status
+        brightness: 60%
+        red: 0
+        green: 0.6
+        blue: 0
+  on_end:                       # back to idle
+    - delay: 600ms
+    - light.turn_on:
+        id: led_status
+        brightness: 50%
+        red: 0
+        green: 0
+        blue: 0.2
+  on_error:
+    - light.turn_on:
+        id: led_status
+        brightness: 90%
+        red: 1.0
+        green: 0
+        blue: 0
+        flash_length: 200ms
+    - delay: 1500ms
+    - light.turn_on:
+        id: led_status
+        brightness: 50%
+        red: 0
+        green: 0
+        blue: 0.2
+
+# ============================================================
+#  Diagnostics
+# ============================================================
+sensor:
+  - platform: wifi_signal
+    name: ${friendly_name} WiFi RSSI
+    update_interval: 60s
+  - platform: internal_temperature
+    name: ${friendly_name} MCU Temperature
+    update_interval: 60s
+
+text_sensor:
+  - platform: version
+    name: ${friendly_name} ESPHome Version
