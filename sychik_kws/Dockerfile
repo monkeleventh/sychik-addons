@@ -1,5 +1,5 @@
 # SychiK KWS — Russian wake-word detector
-# v1.1.4 - fix map: src:dst:opts format (was invalid; blocked mDNS discovery publishing)
+# v1.1.6 - fix Wyoming handler (use AsyncEventHandler subclass, not raw coroutine)
 # Uses python:3.11-slim (multi-arch manifest, prebuilt wheels for all 5 HA architectures).
 
 FROM python:3.11-slim
