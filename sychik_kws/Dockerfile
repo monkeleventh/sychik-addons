@@ -1,5 +1,5 @@
 # SychiK KWS — Russian wake-word detector
-# v1.0.5 - force fresh rebuild (break cache for COPY rootfs layer)
+# v1.1.1 - generate keywords.txt from bpe.model at build time
 # Uses python:3.11-slim (multi-arch manifest, prebuilt wheels for all 5 HA architectures).
 
 FROM python:3.11-slim
@@ -23,11 +23,25 @@ RUN pip install --no-cache-dir \
         "soundfile" \
         "python-multipart" \
         "wyoming>=1.5" \
+        "sentencepiece>=0.2.0" \
     && python -c "import sherpa_onnx; print('ok')"
 
 WORKDIR /app
 COPY rootfs/usr/src/app/ /app/
-COPY keywords.txt /app/keywords.txt
+
+# Copy BPE model and generate keywords.txt with BPE tokens for «сычик»
+COPY bpe.model /data/models/bpe.model
+RUN mkdir -p /data/models && \
+    python -c "
+import sentencepiece as spm
+sp = spm.SentencePieceProcessor()
+sp.Load('/data/models/bpe.model')
+tokens = sp.EncodeAsPieces('сычик')
+print('BPE tokens for «сычик»:', tokens)
+with open('/app/keywords.txt', 'w', encoding='utf-8') as f:
+    f.write(' '.join(tokens) + '\n')
+print('Wrote /app/keywords.txt:', ' '.join(tokens))
+"
 
 LABEL \
     io.hass.name="SychiK KWS" \
