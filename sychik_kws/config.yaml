@@ -1,5 +1,5 @@
 name: "SychiK KWS"
-version: "1.1.0"
+version: "1.1.2"
 slug: "sychik_kws"
 description: "Wake-word detector for the Russian phrase «Сычик» using sherpa-onnx"
 url: "https://github.com/monkeleventh/sychik-addons"
