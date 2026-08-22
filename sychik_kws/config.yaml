@@ -1,5 +1,5 @@
 name: "SychiK KWS"
-version: "1.1.4"
+version: "1.1.5"
 slug: "sychik_kws"
 description: "Wake-word detector for the Russian phrase «Сычик» using sherpa-onnx"
 url: "https://github.com/monkeleventh/sychik-addons"
@@ -22,9 +22,9 @@ ports_description:
   10400/tcp: "Wyoming protocol (for Home Assistant)"
   10401/tcp: "REST API (LAN only)"
 map:
-  - "share/sychik_kws:/data:rw"
+  - "share:rw"
 environment:
-  KWS_MODEL_DIR: "/data/models"
+  KWS_MODEL_DIR: "/share/sychik_kws/models"
   KWS_THRESHOLD: "0.65"
   LOG_LEVEL: "INFO"
 discovery:
