@@ -29,19 +29,10 @@ RUN pip install --no-cache-dir \
 WORKDIR /app
 COPY rootfs/usr/src/app/ /app/
 
-# Copy BPE model and generate keywords.txt with BPE tokens for «сычик»
+# Copy BPE model and a tokenization script, then generate keywords.txt
 COPY bpe.model /data/models/bpe.model
-RUN mkdir -p /data/models && \
-    python -c "
-import sentencepiece as spm
-sp = spm.SentencePieceProcessor()
-sp.Load('/data/models/bpe.model')
-tokens = sp.EncodeAsPieces('сычик')
-print('BPE tokens for «сычик»:', tokens)
-with open('/app/keywords.txt', 'w', encoding='utf-8') as f:
-    f.write(' '.join(tokens) + '\n')
-print('Wrote /app/keywords.txt:', ' '.join(tokens))
-"
+COPY tokenize_kws.py /app/tokenize_kws.py
+RUN mkdir -p /data/models && python /app/tokenize_kws.py
 
 LABEL \
     io.hass.name="SychiK KWS" \
