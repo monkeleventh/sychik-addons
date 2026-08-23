@@ -107,6 +107,10 @@ async def _on_start() -> None:
 
     ATTR = Attribution(name="SychiK", url="https://github.com/monkeleventh/sychik-addons")
     info = Info(
+        asr=[],
+        handle=[],
+        intent=[],
+        tts=[],
         wake=[
             WakeProgram(
                 name="сычик",
